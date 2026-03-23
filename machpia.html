@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MachpIA - La IA de la Hassidout</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Gemini SDK -->
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://esm.run/@google/genai"
+      }
+    }
+    </script>
+
+    <style>
+        :root {
+            --bg-main: #ffffff;
+            --bg-sidebar: #f0f4f9;
+            --bg-input: #f0f4f9;
+            --bg-hover: #e1e5e9;
+            --text-main: #1f1f1f;
+            --text-muted: rgba(0, 0, 0, 0.5);
+            --border-color: rgba(0, 0, 0, 0.1);
+            --accent-color: #1a73e8;
+            --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+        }
+
+        .dark {
+            --bg-main: #131314;
+            --bg-sidebar: #1e1f20;
+            --bg-input: #1e1f20;
+            --bg-hover: #282a2d;
+            --text-main: #e3e3e3;
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-color: #8ab4f8;
+        }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            font-family: var(--font-sans);
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .markdown-body {
+            font-size: 0.875rem;
+            line-height: 1.625;
+        }
+        
+        .markdown-body p { margin-bottom: 1rem; }
+        .markdown-body ul { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 1rem; }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import { GoogleGenAI } from "@google/genai";
+
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const [theme, setTheme] = useState('light');
+            const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
+            const [messages, setMessages] = useState(() => {
+                const saved = localStorage.getItem('machpia_chat_history');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [input, setInput] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const [apiKey, setApiKey] = useState(localStorage.getItem('machpia_api_key') || '');
+            const [showKeyModal, setShowKeyModal] = useState(!localStorage.getItem('machpia_api_key'));
+            const [user, setUser] = useState(() => {
+                const saved = localStorage.getItem('user');
+                return saved ? JSON.parse(saved) : null;
+            });
+            const [showLoginModal, setShowLoginModal] = useState(false);
+            
+            const scrollRef = useRef(null);
+
+            useEffect(() => {
+                document.documentElement.className = theme;
+            }, [theme]);
+
+            useEffect(() => {
+                if (messages.length > 0) {
+                    localStorage.setItem('machpia_chat_history', JSON.stringify(messages));
+                }
+            }, [messages]);
+
+            useEffect(() => {
+                if (scrollRef.current) {
+                    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+                }
+            }, [messages]);
+
+            const handleSend = async (text = input) => {
+                if (!text.trim() || !apiKey) return;
+                
+                const userMessage = { role: 'user', content: text };
+                setMessages(prev => [...prev, userMessage]);
+                setInput('');
+                setIsLoading(true);
+
+                try {
+                    const ai = new GoogleGenAI({ apiKey });
+                    const response = await ai.models.generateContent({
+                        model: "gemini-2.0-flash",
+                        contents: text,
+                        config: {
+                            systemInstruction: "Tu es MachpIA, une IA experte en Hassidout (mouvement Loubavitch). Réponds avec sagesse, précision et chaleur. Utilise des concepts du Tanya et des Sichos du Rebbe."
+                        }
+                    });
+
+                    const assistantMessage = { 
+                        role: 'assistant', 
+                        content: response.text || "Désolé, je n'ai pas pu générer de réponse." 
+                    };
+                    setMessages(prev => [...prev, assistantMessage]);
+                } catch (error) {
+                    console.error(error);
+                    setMessages(prev => [...prev, { 
+                        role: 'assistant', 
+                        content: "Une erreur est survenue. Vérifiez votre clé API." 
+                    }]);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const saveApiKey = (key) => {
+                localStorage.setItem('machpia_api_key', key);
+                setApiKey(key);
+                setShowKeyModal(false);
+            };
+
+            const handleLogin = (name, email) => {
+                const newUser = { name, email };
+                setUser(newUser);
+                localStorage.setItem('user', JSON.stringify(newUser));
+                setShowLoginModal(false);
+            };
+
+            return (
+                <div className="flex h-screen w-full overflow-hidden">
+                    {/* Sidebar */}
+                    <div className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed md:relative z-50 w-72 h-full bg-[var(--bg-sidebar)] border-r border-[var(--border-color)] transition-transform duration-300 flex flex-col p-4`}>
+                        <button 
+                            onClick={() => {
+                                setMessages([]);
+                                localStorage.removeItem('machpia_chat_history');
+                            }}
+                            className="flex items-center gap-3 px-4 py-3 rounded-full bg-[var(--bg-hover)] hover:opacity-80 transition-colors mb-8"
+                        >
+                            <i data-lucide="plus" className="w-5 h-5"></i>
+                            <span className="text-sm font-medium">Nouveau chat</span>
+                        </button>
+                        <div className="flex-1">
+                            <div className="px-4 py-2 text-xs font-medium text-[var(--text-muted)] uppercase">Récent</div>
+                        </div>
+                        <div className="pt-4 border-t border-[var(--border-color)] space-y-2">
+                            <button className="w-full flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-[var(--bg-hover)] text-sm">
+                                <i data-lucide="settings" className="w-4 h-4"></i> Paramètres
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Main */}
+                    <main className="flex-1 flex flex-col relative overflow-hidden bg-[var(--bg-main)]">
+                        <header className="flex items-center justify-between px-4 h-16 border-b border-[var(--border-color)]">
+                            <div className="flex items-center gap-4">
+                                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-[var(--bg-hover)] rounded-full">
+                                    <i data-lucide="menu" className="w-5 h-5"></i>
+                                </button>
+                                <div className="flex flex-col">
+                                    <span className="text-xl font-medium leading-none">MachpIA</span>
+                                    <span className="text-[10px] text-[var(--text-muted)] font-medium">la IA de la Hassidout</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 hover:bg-[var(--bg-hover)] rounded-full">
+                                    <i data-lucide={theme === 'dark' ? 'sun' : 'moon'} className="w-5 h-5"></i>
+                                </button>
+                                {user ? (
+                                    <div className="h-8 w-8 rounded-full bg-[var(--accent-color)] flex items-center justify-center text-white text-xs font-bold">
+                                        {user.name.charAt(0).toUpperCase()}
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent-color)] text-white text-xs font-medium">
+                                        Se connecter
+                                    </button>
+                                )}
+                            </div>
+                        </header>
+
+                        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8">
+                            {messages.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto">
+                                    <h1 className="text-4xl font-medium mb-2">MachpIA</h1>
+                                    <p className="text-xl text-[var(--text-muted)] mb-8">la IA de la Hassidout</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                                        {["Qu'est-ce que le Tanya ?", "Coutumes de Habad", "Concept de l'unité de Dieu", "Traduction de Sichos"].map((q, i) => (
+                                            <button key={i} onClick={() => handleSend(q)} className="p-4 rounded-2xl bg-[var(--bg-sidebar)] border border-[var(--border-color)] hover:bg-[var(--bg-hover)] text-left text-sm">
+                                                {q}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                messages.map((m, i) => (
+                                    <div key={i} className={`flex gap-4 max-w-3xl mx-auto ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center border border-[var(--border-color)] ${m.role === 'assistant' ? 'bg-[var(--bg-sidebar)]' : 'bg-[var(--accent-color)]'}`}>
+                                            <i data-lucide={m.role === 'assistant' ? 'flame' : 'user'} className={`w-5 h-5 ${m.role === 'assistant' ? 'text-[var(--accent-color)]' : 'text-white'}`}></i>
+                                        </div>
+                                        <div className={`flex flex-col gap-1 ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                                            <div className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wider">{m.role === 'assistant' ? 'MachpIA' : 'Vous'}</div>
+                                            <div className={`p-4 rounded-2xl markdown-body whitespace-pre-wrap ${m.role === 'user' ? 'bg-[var(--accent-color)]/10 border border-[var(--accent-color)]/20 rounded-tr-none' : ''}`}>{m.content}</div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            {isLoading && <div className="max-w-3xl mx-auto text-[var(--text-muted)] text-sm animate-pulse">MachpIA réfléchit...</div>}
+                        </div>
+
+                        <div className="p-4 md:p-8">
+                            <div className="max-w-3xl mx-auto relative flex items-center bg-[var(--bg-input)] rounded-[28px] border border-[var(--border-color)] px-4 py-2">
+                                <textarea 
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                                    placeholder="Posez une question..."
+                                    className="flex-1 bg-transparent border-none focus:ring-0 outline-none py-2 resize-none max-h-40"
+                                    rows="1"
+                                ></textarea>
+                                <button onClick={() => handleSend()} className="p-2 rounded-full bg-[var(--text-main)] text-[var(--bg-main)] ml-2">
+                                    <i data-lucide="send" className="w-5 h-5"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* Login Modal */}
+                    {showLoginModal && (
+                        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+                            <div className="bg-[var(--bg-main)] p-8 rounded-3xl max-w-md w-full border border-[var(--border-color)] shadow-2xl">
+                                <h2 className="text-2xl font-semibold mb-4">Connexion</h2>
+                                <p className="text-[var(--text-muted)] mb-6">Connectez-vous pour sauvegarder votre historique.</p>
+                                <div className="space-y-4">
+                                    <input id="login-name" type="text" placeholder="Nom" className="w-full p-4 rounded-2xl bg-[var(--bg-sidebar)] border border-[var(--border-color)] outline-none" />
+                                    <input id="login-email" type="email" placeholder="Email" className="w-full p-4 rounded-2xl bg-[var(--bg-sidebar)] border border-[var(--border-color)] outline-none" />
+                                    <button 
+                                        onClick={() => handleLogin(document.getElementById('login-name').value, document.getElementById('login-email').value)}
+                                        className="w-full py-4 bg-[var(--accent-color)] text-white rounded-full font-medium"
+                                    >
+                                        Se connecter
+                                    </button>
+                                    <button onClick={() => setShowLoginModal(false)} className="w-full py-2 text-sm text-[var(--text-muted)]">Annuler</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* API Key Modal */}
+                    {showKeyModal && (
+                        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+                            <div className="bg-[var(--bg-main)] p-8 rounded-3xl max-w-md w-full border border-[var(--border-color)] shadow-2xl">
+                                <h2 className="text-2xl font-semibold mb-4">Configuration</h2>
+                                <p className="text-[var(--text-muted)] mb-6">Veuillez entrer votre clé API Gemini pour utiliser MachpIA.</p>
+                                <input 
+                                    type="password" 
+                                    placeholder="Clé API Gemini"
+                                    className="w-full p-4 rounded-2xl bg-[var(--bg-sidebar)] border border-[var(--border-color)] mb-4 outline-none focus:border-[var(--accent-color)]"
+                                    onKeyDown={(e) => e.key === 'Enter' && saveApiKey(e.target.value)}
+                                />
+                                <button 
+                                    onClick={(e) => saveApiKey(e.currentTarget.previousSibling.value)}
+                                    className="w-full py-4 bg-[var(--text-main)] text-[var(--bg-main)] rounded-full font-medium"
+                                >
+                                    Enregistrer
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Initialize Lucide icons after each render
+        const observer = new MutationObserver(() => lucide.createIcons());
+        observer.observe(document.getElementById('root'), { childList: true, subtree: true });
+        lucide.createIcons();
+    </script>
+</body>
+</html>
